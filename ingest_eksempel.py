@@ -35,11 +35,14 @@ def main() -> int:
         kilder = ingest.kilder()
         print(f"3. Du har tilgang til {len(kilder)} kilde(r):")
         for kilde in kilder:
-            print(f"   - {kilde['code']}: {kilde.get('preferredTerm')} (dataleverandør {kilde.get('dataleverandorNavn')})")
+            print(
+                f"   - {kilde['code']}: {kilde.get('preferredTerm')} (dataleverandør {kilde.get('dataleverandorNavn')})"
+            )
 
         # 4. Lagre en variabel. Finnes den, oppdateres den (200); ellers opprettes den (201).
         status, svar = ingest.lagre_variabel(
-            kilde_kode, variabel_kode,
+            kilde_kode,
+            variabel_kode,
             foretrukket_term="Eksempelvariabel",
             beskrivelse=f"Lagret av ingest_eksempel.py {time.strftime('%Y-%m-%d %H:%M')}",
         )

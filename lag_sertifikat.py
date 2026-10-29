@@ -52,8 +52,9 @@ def lag(navn: str, gyldig_dager: int, nokkelfil: Path, sertifikatfil: Path, erst
     nokkelfil.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if os.name != "nt":
         os.chmod(nokkelfil.parent, 0o700)
-    pem = nokkel.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                               serialization.NoEncryption())
+    pem = nokkel.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
     ny_nokkel = nokkelfil.with_name(nokkelfil.name + ".ny")
     nytt_sertifikat = sertifikatfil.with_name(sertifikatfil.name + ".ny")
     try:
@@ -77,8 +78,10 @@ def main() -> int:
     argumenter = parser.parse_args()
 
     if NOKKELFIL.exists() and not argumenter.ny:
-        print(f"Du har allerede en nøkkel: {NOKKELFIL}\n"
-              "Bruk --ny for å lage en ny. Da må FHI laste opp det nye sertifikatet.")
+        print(
+            f"Du har allerede en nøkkel: {NOKKELFIL}\n"
+            "Bruk --ny for å lage en ny. Da må FHI laste opp det nye sertifikatet."
+        )
         return 1
 
     lag(argumenter.navn, argumenter.dager, NOKKELFIL, SERTIFIKATFIL, erstatt=argumenter.ny)

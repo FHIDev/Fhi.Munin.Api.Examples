@@ -9,8 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from munin_api import (EksportKlient, IngestKlient, Innstillinger, MuninFeil, TokenKilde, feil_fra_svar,
-                       katalog_oversikt)
+from munin_api import EksportKlient, IngestKlient, Innstillinger, MuninFeil, TokenKilde, feil_fra_svar, katalog_oversikt
 
 
 def svar(status: int, kropp=None, hoder=None) -> requests.Response:
@@ -28,7 +27,9 @@ def token_med_roller(*roller: str) -> str:
 
 @pytest.fixture
 def innstillinger() -> Innstillinger:
-    return Innstillinger("tenant", "klient", "hemmelig", "api://app/.default", "https://ingest.test", "https://eksport.test")
+    return Innstillinger(
+        "tenant", "klient", "hemmelig", "api://app/.default", "https://ingest.test", "https://eksport.test"
+    )
 
 
 @pytest.fixture
@@ -51,7 +52,9 @@ def test_rollene_leses_fra_tokenet(innstillinger, okt):
 
 
 def test_feil_hemmelighet_gir_entras_forklaring(innstillinger, okt):
-    okt.post.return_value = svar(401, {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret."})
+    okt.post.return_value = svar(
+        401, {"error": "invalid_client", "error_description": "AADSTS7000215: Invalid client secret."}
+    )
     with pytest.raises(MuninFeil, match="AADSTS7000215"):
         TokenKilde(innstillinger, okt).token()
 
@@ -89,8 +92,17 @@ def test_helsesjekken_sender_ikke_token(okt):
     assert "Authorization" not in okt.request.call_args.kwargs["headers"]
 
 
-@pytest.mark.parametrize("status, ord", [(401, "MUNIN_SCOPE"), (403, "rollen"), (409, "Konflikt"), (413, "30 MB"),
-                                        (404, "finnes ikke"), (503, "Feil hos Munin")])
+@pytest.mark.parametrize(
+    "status, ord",
+    [
+        (401, "MUNIN_SCOPE"),
+        (403, "rollen"),
+        (409, "Konflikt"),
+        (413, "30 MB"),
+        (404, "finnes ikke"),
+        (503, "Feil hos Munin"),
+    ],
+)
 def test_hver_statuskode_far_en_norsk_forklaring(status, ord):
     feil = feil_fra_svar(svar(status, {"error": "detalj fra API-et", "correlationId": "abc"}))
     assert ord in feil.melding and "detalj fra API-et" in feil.melding
@@ -131,11 +143,16 @@ def test_nettverksfeil_blir_en_muninfeil(okt):
 def test_katalogoversikten_leser_serier_og_datasett():
     katalog = {
         "dct:title": [{"@language": "en", "@value": "Catalogue"}, {"@language": "nb", "@value": "Katalog"}],
-        "dcat:datasetSeries": [{"dct:identifier": "NPR", "dct:title": {"@language": "nb", "@value": "Norsk pasientregister"}}],
+        "dcat:datasetSeries": [
+            {"dct:identifier": "NPR", "dct:title": {"@language": "nb", "@value": "Norsk pasientregister"}}
+        ],
         "dcat:dataset": [{}, {}],
     }
-    assert katalog_oversikt(katalog) == {"tittel": "Katalog", "antall_datasett": 2,
-                                         "serier": [{"kode": "NPR", "tittel": "Norsk pasientregister"}]}
+    assert katalog_oversikt(katalog) == {
+        "tittel": "Katalog",
+        "antall_datasett": 2,
+        "serier": [{"kode": "NPR", "tittel": "Norsk pasientregister"}],
+    }
 
 
 def test_feltfeil_som_ikke_er_en_ordbok_gir_likevel_en_lesbar_feil():

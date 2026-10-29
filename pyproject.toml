@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pyflakes, pycodestyle, import order and the common bug patterns.
+select = ["F", "E", "W", "I", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
