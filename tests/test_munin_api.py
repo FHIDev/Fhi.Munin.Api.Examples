@@ -136,3 +136,42 @@ def test_katalogoversikten_leser_serier_og_datasett():
     }
     assert katalog_oversikt(katalog) == {"tittel": "Katalog", "antall_datasett": 2,
                                          "serier": [{"kode": "NPR", "tittel": "Norsk pasientregister"}]}
+
+
+def test_feltfeil_som_ikke_er_en_ordbok_gir_likevel_en_lesbar_feil():
+    feil = feil_fra_svar(svar(400, {"error": "Validering feilet", "details": ["noe er galt"]}))
+    assert "noe er galt" in str(feil)
+
+
+def test_et_svar_som_ikke_er_json_blir_en_muninfeil(okt):
+    html = requests.Response()
+    html.status_code = 200
+    html.headers["Content-Type"] = "text/html"
+    html._content = b"<html>innlogging</html>"
+    okt.request.return_value = html
+    with pytest.raises(MuninFeil, match="ikke med JSON"):
+        IngestKlient("https://ingest.test", None, okt).helse()
+
+
+def test_samme_sidetoken_to_ganger_stopper_i_stedet_for_a_ga_i_ring(innstillinger, okt):
+    okt.request.side_effect = [svar(200, {"items": [], "pageToken": "x"}), svar(200, {"items": [], "pageToken": "x"})]
+    with pytest.raises(MuninFeil, match="samme sidetoken"):
+        EksportKlient("https://eksport.test", TokenKilde(innstillinger, okt)).variabel("test", "V1")
+
+
+def test_tokensvar_uten_token_forklares(innstillinger, okt):
+    okt.post.return_value = svar(200, {"token_type": "Bearer"})
+    with pytest.raises(MuninFeil, match="uten noe token"):
+        TokenKilde(innstillinger, okt).token()
+
+
+def test_kildelisten_og_datasettet_ber_om_riktige_parametre(innstillinger, okt):
+    eksport = EksportKlient("https://eksport.test", TokenKilde(innstillinger, okt))
+    okt.request.return_value = svar(200, {"items": [{"kilde": {"code": "test"}}], "pageToken": None})
+    assert eksport.kildeliste() == [{"code": "test"}]
+    assert okt.request.call_args.kwargs["params"] == {"include": "kilde", "pageSize": 100}
+
+    okt.request.return_value = svar(200, {"kilde": {"code": "test"}, "variabler": []})
+    eksport.datasett("test")
+    assert okt.request.call_args.args[1] == "https://eksport.test/api/export/v1/datasets/test"
+    assert okt.request.call_args.kwargs["params"] == {"nestedVariables": "codes"}

@@ -54,6 +54,8 @@ with st.sidebar:
 fane_ingest, fane_eksport = st.tabs(["Ingest (skrive)", "Eksport (lese)"])
 
 with fane_ingest:
+    st.caption("Trykk «Mine kilder» først, og bruk en kildekode fra listen. "
+               "Bruk en testkilde: det du lagrer her, blir liggende i testkatalogen.")
     kilde_kode = st.text_input("Kildekode", value="test", key="ingest_kilde")
     variabel_kode = st.text_input("Variabelkode", value="EKSEMPEL_VARIABEL")
     foretrukket_term = st.text_input("Navn (preferredTerm)", value="Eksempelvariabel")
@@ -83,10 +85,10 @@ with fane_ingest:
     if kolonner[2].button("Lagre variabel"):
         try:
             status, svar = ingest.lagre_variabel(kilde_kode, variabel_kode, foretrukket_term, beskrivelse or None)
-            variabel = svar["variabel"]
+            variabel = svar.get("variabel") or {}
             st.success(f"Variabelen ble {'opprettet' if status == 201 else 'oppdatert'} ({status}).")
             versjon = variabel.get("activeVersjon") or {}
-            st.table([{"Kode": variabel["code"], "Id": variabel["id"], "Navn": versjon.get("preferredTerm"),
+            st.table([{"Kode": variabel.get("code"), "Id": variabel.get("id"), "Navn": versjon.get("preferredTerm"),
                        "Beskrivelse": versjon.get("beskrivelse"), "Status": versjon.get("status")}])
         except MuninFeil as feil:
             vis_feil(feil)
@@ -111,7 +113,7 @@ with fane_eksport:
         try:
             with st.spinner("Henter katalogen (den er stor, så det kan ta et halvt minutt) ..."):
                 start = time.time()
-                katalog = EksportKlient(eksport.base_url, None).healthdcat_katalog()
+                katalog = EksportKlient(eksport.base_url, None, eksport.okt).healthdcat_katalog()
             oversikt = katalog_oversikt(katalog)
             st.success(f"«{oversikt['tittel']}»: {len(oversikt['serier'])} kilder (serier) og "
                        f"{oversikt['antall_datasett']} datasamlinger (datasett), hentet på {time.time() - start:.0f} sekunder.")

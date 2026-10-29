@@ -19,6 +19,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator
+from urllib.parse import quote
 
 import requests
 
@@ -26,6 +27,9 @@ import requests
 # er stor, så den får lengre tid (se ExportKlient.healthdcat_katalog).
 STANDARD_TIDSAVBRUDD = 30
 KATALOG_TIDSAVBRUDD = 180
+
+# Øvre grense for antall sider vi blar gjennom, så en feil i API-et aldri gir en evig løkke.
+MAKS_SIDER = 1000
 
 
 class MuninFeil(Exception):
@@ -48,6 +52,9 @@ class MuninFeil(Exception):
         self.melding = melding
         self.status = status
         self.korrelasjons_id = korrelasjons_id
+        # Feltfeil skal være {felt: [meldinger]}; noe annet tas vare på som én melding.
+        if detaljer and not isinstance(detaljer, dict):
+            detaljer = {"feil": detaljer}
         self.detaljer = detaljer or {}
 
     def __str__(self) -> str:
@@ -88,6 +95,15 @@ def _forklaring(status: int) -> str:
     if status >= 500:
         return f"Feil hos Munin ({status}): prøv igjen om litt. Vedvarer det, kontakt FHI med korrelasjons-id-en."
     return f"Uventet svar fra Munin ({status})."
+
+
+def json_fra(svar: requests.Response) -> Any:
+    """Kroppen i et vellykket svar som JSON, eller en MuninFeil når det ikke er JSON (for eksempel en HTML-side)."""
+    try:
+        return svar.json()
+    except ValueError as feil:
+        raise MuninFeil(f"Munin svarte {svar.status_code}, men ikke med JSON. Sjekk adressen i .env "
+                        f"(fikk «{svar.headers.get('Content-Type', 'ukjent innholdstype')}»).", svar.status_code) from feil
 
 
 def feil_fra_svar(svar: requests.Response) -> MuninFeil:
@@ -200,9 +216,12 @@ class TokenKilde:
                 svar.status_code,
             )
 
-        kropp = svar.json()
+        kropp = json_fra(svar)
+        if not isinstance(kropp, dict) or not kropp.get("access_token"):
+            raise MuninFeil("Entra ID svarte uten noe token. Sjekk MUNIN_SCOPE i .env.")
         self._token = kropp["access_token"]
-        self._utloper = time.time() + int(kropp.get("expires_in", 3600))
+        # Minst to minutter, så et kort token ikke hentes på nytt ved hvert kall.
+        self._utloper = time.time() + max(int(kropp.get("expires_in", 3600)), 120)
         return self._token
 
     def roller(self) -> list[str]:
@@ -210,9 +229,12 @@ class TokenKilde:
 
         Vi leser bare innholdet i tokenet; det er API-et som sjekker at det er ekte.
         """
-        nyttelast = self.token().split(".")[1]
-        nyttelast += "=" * (-len(nyttelast) % 4)
-        data = json.loads(base64.urlsafe_b64decode(nyttelast))
+        try:
+            nyttelast = self.token().split(".")[1]
+            nyttelast += "=" * (-len(nyttelast) % 4)
+            data = json.loads(base64.urlsafe_b64decode(nyttelast))
+        except (IndexError, ValueError) as feil:
+            raise MuninFeil("Tokenet fra Entra ID kunne ikke leses.") from feil
         return sorted(data.get("roles", []))
 
 
@@ -248,15 +270,15 @@ class IngestKlient(_ApiKlient):
 
     def helse(self) -> dict[str, Any]:
         """Er API-et oppe, og når det identitetsleverandørene? Krever ikke token."""
-        return self._kall("GET", "/api/ingest/v1/health", autentisert=False).json()
+        return json_fra(self._kall("GET", "/api/ingest/v1/health", autentisert=False))
 
     def kilder(self) -> list[dict[str, Any]]:
         """Kildene klienten har tilgang til (de med samme dataleverandør som rollen)."""
-        return self._kall("GET", "/api/ingest/v1/kilder").json()
+        return json_fra(self._kall("GET", "/api/ingest/v1/kilder"))
 
     def kilde(self, kilde_kode: str) -> dict[str, Any]:
         """Én kilde med alle detaljer."""
-        return self._kall("GET", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}").json()
+        return json_fra(self._kall("GET", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}"))
 
     def lagre_variabel(self, kilde_kode: str, variabel_kode: str, foretrukket_term: str,
                        beskrivelse: str | None = None, **flere_felt: Any) -> tuple[int, dict[str, Any]]:
@@ -270,20 +292,19 @@ class IngestKlient(_ApiKlient):
             kropp["beskrivelse"] = beskrivelse
         svar = self._kall("PATCH", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}/variabler/{_sti(variabel_kode)}",
                           json=kropp)
-        return svar.status_code, svar.json()
+        return svar.status_code, json_fra(svar)
 
 
 class EksportKlient(_ApiKlient):
     """Eksport-API-et: les publisert metadata."""
 
     def helse(self) -> dict[str, Any]:
-        return self._kall("GET", "/api/export/v1/health", autentisert=False).json()
+        return json_fra(self._kall("GET", "/api/export/v1/health", autentisert=False))
 
     def healthdcat_katalog(self) -> dict[str, Any]:
         """HealthDCAT-AP-katalogen (v2, JSON-LD). Åpen, uten token, men stor (flere MB)."""
-        return self._kall("GET", "/api/export/v2/healthdcat-ap/catalog", autentisert=False,
-                          tidsavbrudd=KATALOG_TIDSAVBRUDD,
-                          headers={"Accept": "application/ld+json"}).json()
+        return json_fra(self._kall("GET", "/api/export/v2/healthdcat-ap/catalog", autentisert=False,
+                                   tidsavbrudd=KATALOG_TIDSAVBRUDD, headers={"Accept": "application/ld+json"}))
 
     def kildeliste(self, sidestorrelse: int = 100) -> list[dict[str, Any]]:
         """Alle kilder uten variabler (lett liste). Krever export.datasets.read."""
@@ -292,8 +313,8 @@ class EksportKlient(_ApiKlient):
 
     def datasett(self, kilde_kode: str) -> dict[str, Any]:
         """Én kilde med alle variabler, med variabellistene som koder. Krever export.datasets.read."""
-        return self._kall("GET", f"/api/export/v1/datasets/{_sti(kilde_kode)}",
-                          params={"nestedVariables": "codes"}).json()
+        return json_fra(self._kall("GET", f"/api/export/v1/datasets/{_sti(kilde_kode)}",
+                                   params={"nestedVariables": "codes"}))
 
     def variabler(self, kilde_kode: str) -> Iterator[dict[str, Any]]:
         """Variablene i én kilde, side for side. Krever export.metadata.read."""
@@ -308,13 +329,18 @@ class EksportKlient(_ApiKlient):
         # Eksport deler lange lister i sider. Hver side har et «pageToken» for neste
         # side; det er null på den siste.
         side_token = None
-        while True:
+        sett: set[str] = set()
+        for _ in range(MAKS_SIDER):
             svar = self._kall("GET", sti, params={**parametre, **({"pageToken": side_token} if side_token else {})})
-            data = svar.json()
+            data = json_fra(svar)
             yield from data.get("items", [])
             side_token = data.get("pageToken")
             if not side_token:
                 return
+            if side_token in sett:
+                raise MuninFeil(f"Munin ga samme sidetoken to ganger ({sti}); stoppet for ikke å gå i ring.")
+            sett.add(side_token)
+        raise MuninFeil(f"Stoppet etter {MAKS_SIDER} sider ({sti}).")
 
 
 def katalog_oversikt(katalog: dict[str, Any]) -> dict[str, Any]:
@@ -337,7 +363,7 @@ def katalog_oversikt(katalog: dict[str, Any]) -> dict[str, Any]:
 
 def _sti(kode: str) -> str:
     """En kode trygt satt inn i en URL-sti (en kode med / eller ? kan ikke ødelegge adressen)."""
-    return requests.utils.quote(kode.strip(), safe="")
+    return quote(kode.strip(), safe="")
 
 
 def lag_klienter(innstillinger: Innstillinger | None = None) -> tuple[IngestKlient, EksportKlient, TokenKilde]:

@@ -44,7 +44,7 @@ def main() -> int:
             beskrivelse=f"Lagret av ingest_eksempel.py {time.strftime('%Y-%m-%d %H:%M')}",
         )
         hva = "opprettet" if status == 201 else "oppdatert"
-        print(f"4. Variabelen {variabel_kode} ble {hva} ({status}). Id: {svar['variabel']['id']}")
+        print(f"4. Variabelen {variabel_kode} ble {hva} ({status}). Id: {(svar.get('variabel') or {}).get('id')}")
 
         # 5. Les den tilbake gjennom Eksport-API-et, som er det andre systemer leser fra.
         rader = eksport.variabel(kilde_kode, variabel_kode)

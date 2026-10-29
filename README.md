@@ -85,7 +85,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Neste gang trenger du bare aktiveringslinjen (den andre linjen) før du kjører noe.
+Neste gang trenger du bare aktiveringslinjen (den andre linjen) før du kjører noe. Kommandoene under virker bare med miljøet aktivert og med terminalen i denne mappen.
 
 ## 4. Kjør nettsiden
 
@@ -93,7 +93,11 @@ Neste gang trenger du bare aktiveringslinjen (den andre linjen) før du kjører 
 streamlit run app.py
 ```
 
-Siden åpner seg i nettleseren (ellers åpne adressen terminalen viser, vanligvis http://localhost:8501). Stopp den med Ctrl+C i terminalen.
+Første gang spør Streamlit om e-postadressen din i terminalen. Trykk bare Enter. Siden åpner seg i nettleseren (ellers åpne adressen terminalen viser, vanligvis http://localhost:8501). Stopp den med Ctrl+C i terminalen.
+
+Kjør siden bare på din egen maskin. Den bruker din app-registrering, så alle som når siden, skriver til Munin som deg.
+
+**Hvilken kilde?** Trykk «Mine kilder» først, og bruk en kildekode fra den listen. Du kan bare skrive til kildene med samme dataleverandør som rollen din. Bruk en testkilde, siden det du lagrer, blir liggende i testkatalogen.
 
 Siden har to faner:
 
@@ -137,7 +141,7 @@ Modulen gjør hvert feilsvar om til en norsk forklaring, og tar med Munins egen 
 |------|-------|------------|
 | Entra-feil (AADSTS…) | Fikk ikke token | Sjekk tenant-id, klient-id, hemmelighet og scope i `.env`. AADSTS7000215 betyr feil hemmelighet; AADSTS700016 betyr ukjent klient-id. |
 | 400 | Ugyldig forespørsel | Les feltfeilene. Et påkrevd felt mangler, eller en verdi er for lang. |
-| 401 | Ikke autentisert | Tokenet mangler eller er for feil API. Sjekk `MUNIN_SCOPE`. |
+| 401 | Ikke autentisert | Tokenet mangler, er utløpt eller er utstedt for feil API. Sjekk `MUNIN_SCOPE`. |
 | 403 | Ingen tilgang | Tokenet mangler rollen. Se «Vis rollene i tokenet», og sjekk at kilden har samme dataleverandør som rollen. |
 | 404 | Ikke funnet | Kildekoden finnes ikke (store og små bokstaver teller), eller API-et er ikke slått på. |
 | 409 | Konflikt | En annen endring kom i veien, eller noe du endrer, brukes også av en annen kilde. Prøv igjen; ved delte entiteter, kontakt FHI. |
@@ -160,7 +164,7 @@ except MuninFeil as feil:
     print(feil)  # norsk forklaring, feltfeil og korrelasjons-id
 ```
 
-`lagre_variabel` tar også andre felt API-et kjenner, som nøkkelord, for eksempel `gyldigFra="2020-01-01T00:00:00Z"`.
+`lagre_variabel` tar også andre felt API-et kjenner, som nøkkelord, for eksempel `gyldigFra="2020-01-01T00:00:00Z"`. Bruk API-ets egne feltnavn, som `gyldigFra`: et navn som `gyldig_fra` sendes som det er, og API-et kjenner det ikke.
 
 ## 9. For utviklere: testene
 
