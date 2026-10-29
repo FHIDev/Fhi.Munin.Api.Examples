@@ -106,3 +106,87 @@ def test_sertifikat_er_nok_uten_hemmelighet_i_miljoet(monkeypatch, par):
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None, raising=False)
     innst = Innstillinger.fra_miljo()
     assert innst.client_secret is None and innst.cert_sti == str(sertifikat)
+
+
+def test_x5t_er_sha1_av_sertifikatet(innstillinger, par):
+    _, sertifikatfil = par
+    hode = json.loads(b64(klientpastand(innstillinger, TOKEN_ADRESSE).split(".")[0]))
+    der = x509.load_pem_x509_certificate(sertifikatfil.read_bytes()).public_bytes(serialization.Encoding.DER)
+    assert b64(hode["x5t"]) == hashlib.sha1(der).digest()
+
+
+def test_pastanden_gjelder_fra_na(innstillinger):
+    import time
+    innhold = json.loads(b64(klientpastand(innstillinger, TOKEN_ADRESSE).split(".")[1]))
+    assert abs(innhold["iat"] - time.time()) < 5
+
+
+def test_hemmeligheten_brukes_nar_begge_er_satt(innstillinger):
+    innstillinger.client_secret = "hemmelig"
+    okt = MagicMock(spec=requests.Session)
+    resp = requests.Response()
+    resp.status_code = 200
+    resp._content = json.dumps({"access_token": "a.b.c"}).encode()
+    okt.post.return_value = resp
+    TokenKilde(innstillinger, okt).token()
+    data = okt.post.call_args.kwargs["data"]
+    assert data["client_secret"] == "hemmelig" and "client_assertion" not in data
+
+
+def test_uten_hemmelighet_og_uten_sertifikat_navngis_begge(monkeypatch):
+    for navn, verdi in {"MUNIN_TENANT_ID": "t", "MUNIN_CLIENT_ID": "c", "MUNIN_SCOPE": "s"}.items():
+        monkeypatch.setenv(navn, verdi)
+    for navn in ("MUNIN_CLIENT_SECRET", "MUNIN_CERT_KEY_PATH", "MUNIN_CERT_PATH"):
+        monkeypatch.delenv(navn, raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None, raising=False)
+    with pytest.raises(MuninFeil, match="MUNIN_CERT_KEY_PATH og MUNIN_CERT_PATH"):
+        Innstillinger.fra_miljo()
+
+
+@pytest.fixture
+def skript(tmp_path, monkeypatch):
+    monkeypatch.setattr(lag_sertifikat, "NOKKELFIL", tmp_path / ".munin" / "munin-klient.key")
+    monkeypatch.setattr(lag_sertifikat, "SERTIFIKATFIL", tmp_path / "munin-klient.cer")
+    return tmp_path
+
+
+def kjor(monkeypatch, *argumenter: str) -> int:
+    monkeypatch.setattr("sys.argv", ["lag_sertifikat.py", *argumenter])
+    return lag_sertifikat.main()
+
+
+def test_skriptet_skriver_env_linjene_og_nekter_a_skrive_over(skript, monkeypatch, capsys):
+    assert kjor(monkeypatch) == 0
+    ut = capsys.readouterr().out
+    assert f"MUNIN_CERT_KEY_PATH='{lag_sertifikat.NOKKELFIL}'" in ut
+    assert f"MUNIN_CERT_PATH='{lag_sertifikat.SERTIFIKATFIL}'" in ut
+
+    for_ = lag_sertifikat.NOKKELFIL.read_bytes()
+    assert kjor(monkeypatch) == 1
+    assert lag_sertifikat.NOKKELFIL.read_bytes() == for_
+
+
+def test_ny_erstatter_nokkelen_og_ber_fhi_fjerne_det_gamle(skript, monkeypatch, capsys):
+    kjor(monkeypatch)
+    gammel = lag_sertifikat.NOKKELFIL.read_bytes()
+    assert kjor(monkeypatch, "--ny") == 0
+    assert lag_sertifikat.NOKKELFIL.read_bytes() != gammel
+    assert "fjerne det gamle" in capsys.readouterr().out
+    assert not list(skript.rglob("*.ny"))
+
+
+def test_en_feil_underveis_tar_ikke_fra_deg_den_gamle_nokkelen(skript, monkeypatch):
+    kjor(monkeypatch)
+    gammel_nokkel = lag_sertifikat.NOKKELFIL.read_bytes()
+    gammelt_sertifikat = lag_sertifikat.SERTIFIKATFIL.read_bytes()
+
+    def feiler(*_):
+        raise OSError("disken er full")
+
+    with monkeypatch.context() as m:
+        m.setattr(lag_sertifikat.Path, "write_bytes", feiler)
+        with pytest.raises(OSError):
+            kjor(m, "--ny")
+    assert lag_sertifikat.NOKKELFIL.read_bytes() == gammel_nokkel
+    assert lag_sertifikat.SERTIFIKATFIL.read_bytes() == gammelt_sertifikat
+    assert not list(skript.rglob("*.ny"))

@@ -77,14 +77,14 @@ Munins API-er er for maskiner, ikke for innloggede personer. Du logger derfor ik
 Med et sertifikat finnes det ingen hemmelighet som må sendes noe sted. Du lager et nøkkelpar på din egen maskin. Den private nøkkelen blir der; FHI får bare sertifikatet, som er den offentlige delen.
 
 1. Kjør `python lag_sertifikat.py`.
-   - Den private nøkkelen havner i mappen `.munin` i hjemmemappen din, og bare du kan lese den. Ikke send den til noen.
+   - Den private nøkkelen havner i mappen `.munin` i brukermappen din, som andre vanlige brukere ikke har tilgang til. Ikke send den til noen, og ikke legg den i en mappe som synkroniseres (som OneDrive).
    - Sertifikatet havner i denne mappen, som `munin-klient.cer`.
    - Skriptet skriver ut to linjer for `.env`. La vinduet stå åpent.
 2. Send `munin-klient.cer` til FHI (Teams eller e-post går fint; det er ikke hemmelig). FHI laster det opp på app-registreringen din.
 3. Du får tre verdier tilbake fra FHI: **tenant-id**, **klient-id** og **scope**. Heller ikke de er hemmelige.
 4. Kopier `.env.example` til en ny fil som heter `.env`, i samme mappe. Fyll inn de tre verdiene, og lim inn de to linjene fra trinn 1 (`MUNIN_CERT_KEY_PATH` og `MUNIN_CERT_PATH`). La `MUNIN_CLIENT_SECRET` stå tom.
 
-Sertifikatet gjelder i et år. Lag et nytt med `python lag_sertifikat.py --ny` og send det til FHI på samme måte.
+Sertifikatet gjelder i et år. Lag et nytt med `python lag_sertifikat.py --ny` og send det til FHI på samme måte. Be FHI fjerne det gamle sertifikatet samtidig. Den gamle nøkkelen erstattes først når den nye er ferdig laget.
 
 ### Med klienthemmelighet (alternativ)
 

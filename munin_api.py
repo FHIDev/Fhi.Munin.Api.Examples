@@ -20,6 +20,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import quote
 
@@ -269,15 +270,15 @@ def klientpastand(innstillinger: Innstillinger, token_adresse: str) -> str:
     from cryptography.hazmat.primitives.asymmetric import padding
 
     try:
-        nokkel = serialization.load_pem_private_key(open(innstillinger.cert_nokkel_sti, "rb").read(), password=None)
-        sertifikat = x509.load_pem_x509_certificate(open(innstillinger.cert_sti, "rb").read())
+        nokkel = serialization.load_pem_private_key(Path(innstillinger.cert_nokkel_sti).read_bytes(), password=None)
+        sertifikat = x509.load_pem_x509_certificate(Path(innstillinger.cert_sti).read_bytes())
     except (OSError, ValueError) as feil:
         raise MuninFeil(f"Kunne ikke lese nøkkelen eller sertifikatet ({feil}). Sjekk MUNIN_CERT_KEY_PATH og "
                         "MUNIN_CERT_PATH i .env, eller lag dem på nytt med lag_sertifikat.py.") from feil
 
     der = sertifikat.public_bytes(serialization.Encoding.DER)
     hode = {"alg": "RS256", "typ": "JWT",
-            "x5t#S256": _b64url(hashlib.sha256(der).digest()), "x5t": _b64url(hashlib.sha1(der).digest())}
+            "x5t#S256": _b64url(hashlib.sha256(der).digest()), "x5t": _b64url(hashlib.sha1(der, usedforsecurity=False).digest())}
     nu = int(time.time())
     innhold = {"aud": token_adresse, "iss": innstillinger.client_id, "sub": innstillinger.client_id,
                "jti": str(uuid.uuid4()), "nbf": nu, "iat": nu, "exp": nu + 600}
