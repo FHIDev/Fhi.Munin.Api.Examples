@@ -178,7 +178,10 @@ Testene kjører uten nettverk: hvert HTTP-kall erstattes av et ferdig svar.
 ```
 pip install -r requirements-dev.txt
 python -m pytest
+ruff check . && ruff format --check .
 ```
+
+GitHub kjører det samme på hver pull request og på main (`.github/workflows/tests.yml`).
 
 ---
 

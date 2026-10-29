@@ -21,21 +21,45 @@ def svar(status: int, kropp) -> requests.Response:
     return r
 
 
-TOKEN = "h." + base64.urlsafe_b64encode(json.dumps({"roles": ["ingest.provider.fhitest"]}).encode()).decode().rstrip("=") + ".s"
+TOKEN = (
+    "h."
+    + base64.urlsafe_b64encode(json.dumps({"roles": ["ingest.provider.fhitest"]}).encode()).decode().rstrip("=")
+    + ".s"
+)
 
 SVAR = {
-    ("GET", "/api/ingest/v1/health"): svar(200, {"status": "healthy", "version": {"major": 1, "minor": 17},
-                                                 "authentication": {"schemes": [{"scheme": "EntraId", "status": "healthy"}]}}),
-    ("GET", "/api/ingest/v1/kilder"): svar(200, [{"code": "test", "preferredTerm": "Test", "dataleverandorNavn": "fhitest"}]),
+    ("GET", "/api/ingest/v1/health"): svar(
+        200,
+        {
+            "status": "healthy",
+            "version": {"major": 1, "minor": 17},
+            "authentication": {"schemes": [{"scheme": "EntraId", "status": "healthy"}]},
+        },
+    ),
+    ("GET", "/api/ingest/v1/kilder"): svar(
+        200, [{"code": "test", "preferredTerm": "Test", "dataleverandorNavn": "fhitest"}]
+    ),
     ("PATCH", "/api/ingest/v1/kilder/test/variabler/EKSEMPEL_VARIABEL"): svar(
-        201, {"variabel": {"id": "1", "code": "EKSEMPEL_VARIABEL", "activeVersjon": {"preferredTerm": "Eksempelvariabel"}}}),
-    ("GET", "/api/export/v1/metadata/variables"): svar(200, {"items": [{"code": "EKSEMPEL_VARIABEL", "name": "Eksempelvariabel"}],
-                                                             "pageToken": None}),
-    ("GET", "/api/export/v2/healthdcat-ap/catalog"): svar(200, {"dct:title": {"@value": "Katalog"},
-                                                                "dcat:datasetSeries": [{"dct:identifier": "test"}], "dcat:dataset": []}),
-    ("GET", "/api/export/v1/datasets"): svar(200, {"items": [{"kilde": {"code": "test", "preferredTerm": "Test"}}], "pageToken": None}),
-    ("GET", "/api/export/v1/datasets/test"): svar(200, {"kilde": {"code": "test", "datasamlinger": [{"code": "D1", "variabler": ["V1"]}]},
-                                                        "variabler": [{"code": "V1", "kodeverklinker": [{"kodeverkType": "ICD-10", "kodeverkReference": "x"}]}]}),
+        201,
+        {"variabel": {"id": "1", "code": "EKSEMPEL_VARIABEL", "activeVersjon": {"preferredTerm": "Eksempelvariabel"}}},
+    ),
+    ("GET", "/api/export/v1/metadata/variables"): svar(
+        200, {"items": [{"code": "EKSEMPEL_VARIABEL", "name": "Eksempelvariabel"}], "pageToken": None}
+    ),
+    ("GET", "/api/export/v2/healthdcat-ap/catalog"): svar(
+        200,
+        {"dct:title": {"@value": "Katalog"}, "dcat:datasetSeries": [{"dct:identifier": "test"}], "dcat:dataset": []},
+    ),
+    ("GET", "/api/export/v1/datasets"): svar(
+        200, {"items": [{"kilde": {"code": "test", "preferredTerm": "Test"}}], "pageToken": None}
+    ),
+    ("GET", "/api/export/v1/datasets/test"): svar(
+        200,
+        {
+            "kilde": {"code": "test", "datasamlinger": [{"code": "D1", "variabler": ["V1"]}]},
+            "variabler": [{"code": "V1", "kodeverklinker": [{"kodeverkType": "ICD-10", "kodeverkReference": "x"}]}],
+        },
+    ),
 }
 
 
@@ -46,11 +70,19 @@ def falsk_request(self, metode, adresse, **_):
 
 @pytest.fixture
 def side(monkeypatch):
-    for navn, verdi in {"MUNIN_TENANT_ID": "t", "MUNIN_CLIENT_ID": "c", "MUNIN_CLIENT_SECRET": "s",
-                        "MUNIN_SCOPE": "api://app/.default"}.items():
+    for navn, verdi in {
+        "MUNIN_TENANT_ID": "t",
+        "MUNIN_CLIENT_ID": "c",
+        "MUNIN_CLIENT_SECRET": "s",
+        "MUNIN_SCOPE": "api://app/.default",
+    }.items():
         monkeypatch.setenv(navn, verdi)
-    with patch.object(requests.Session, "request", falsk_request), \
-         patch.object(requests.Session, "post", lambda self, *a, **k: svar(200, {"access_token": TOKEN, "expires_in": 3600})):
+    with (
+        patch.object(requests.Session, "request", falsk_request),
+        patch.object(
+            requests.Session, "post", lambda self, *a, **k: svar(200, {"access_token": TOKEN, "expires_in": 3600})
+        ),
+    ):
         yield AppTest.from_file(APP, default_timeout=30).run()
 
 
@@ -61,11 +93,14 @@ def trykk(at: AppTest, tekst: str) -> AppTest:
     return at
 
 
-@pytest.mark.parametrize("knapp, forventet", [
-    ("Helsesjekk", "Status: healthy"),
-    ("Lagre variabel", "opprettet (201)"),
-    ("HealthDCAT-katalogen", "1 kilder (serier)"),
-])
+@pytest.mark.parametrize(
+    "knapp, forventet",
+    [
+        ("Helsesjekk", "Status: healthy"),
+        ("Lagre variabel", "opprettet (201)"),
+        ("HealthDCAT-katalogen", "1 kilder (serier)"),
+    ],
+)
 def test_knappene_viser_resultatet(side, knapp, forventet):
     at = trykk(side, knapp)
     assert any(forventet in s.value for s in at.success), [s.value for s in at.success]

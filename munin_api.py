@@ -14,8 +14,8 @@ Alt som er hemmelig eller miljøspesifikt leses fra miljøvariabler (se
 from __future__ import annotations
 
 import base64
-import json
 import hashlib
+import json
 import os
 import time
 import uuid
@@ -63,8 +63,10 @@ class MuninFeil(Exception):
     def __str__(self) -> str:
         tekst = self.melding
         if self.detaljer:
-            felt = "; ".join(f"{navn}: {', '.join(map(str, feil)) if isinstance(feil, list) else feil}"
-                             for navn, feil in self.detaljer.items())
+            felt = "; ".join(
+                f"{navn}: {', '.join(map(str, feil)) if isinstance(feil, list) else feil}"
+                for navn, feil in self.detaljer.items()
+            )
             tekst += f"\nFeltfeil: {felt}"
         if self.korrelasjons_id:
             tekst += f"\nKorrelasjons-id (oppgi den til FHI): {self.korrelasjons_id}"
@@ -75,18 +77,28 @@ class MuninFeil(Exception):
 # til etterpå, siden den ofte sier nøyaktig hva som var galt.
 FORKLARINGER = {
     400: "Ugyldig forespørsel (400): noe i det du sendte, var ikke gyldig. Se feltfeilene under.",
-    401: ("Ikke autentisert (401): tokenet mangler, er utløpt eller er utstedt for feil API. "
-          "Sjekk MUNIN_TENANT_ID, MUNIN_CLIENT_ID og MUNIN_SCOPE i .env."),
-    403: ("Ingen tilgang (403): tokenet er gyldig, men klienten mangler rollen som trengs. "
-          "Ingest krever ingest.provider.<dataleverandør> for kilden; eksport krever "
-          "export.metadata.read eller export.datasets.read. Se «Roller i tokenet» og be FHI om tilgang."),
-    404: ("Ikke funnet (404): kilden eller ressursen finnes ikke, eller API-et er ikke slått på "
-          "i dette miljøet. Sjekk kildekoden og adressen."),
-    409: ("Konflikt (409): en annen endring kom i veien, eller du prøver å endre noe som en annen "
-          "kilde også bruker. Hent dataene på nytt og prøv igjen; ved delte entiteter, kontakt FHI."),
+    401: (
+        "Ikke autentisert (401): tokenet mangler, er utløpt eller er utstedt for feil API. "
+        "Sjekk MUNIN_TENANT_ID, MUNIN_CLIENT_ID og MUNIN_SCOPE i .env."
+    ),
+    403: (
+        "Ingen tilgang (403): tokenet er gyldig, men klienten mangler rollen som trengs. "
+        "Ingest krever ingest.provider.<dataleverandør> for kilden; eksport krever "
+        "export.metadata.read eller export.datasets.read. Se «Roller i tokenet» og be FHI om tilgang."
+    ),
+    404: (
+        "Ikke funnet (404): kilden eller ressursen finnes ikke, eller API-et er ikke slått på "
+        "i dette miljøet. Sjekk kildekoden og adressen."
+    ),
+    409: (
+        "Konflikt (409): en annen endring kom i veien, eller du prøver å endre noe som en annen "
+        "kilde også bruker. Hent dataene på nytt og prøv igjen; ved delte entiteter, kontakt FHI."
+    ),
     412: "Utdatert versjon (412): ressursen er endret siden du hentet den. Hent den på nytt og prøv igjen.",
-    413: ("For stor forespørsel (413): innholdet er over grensen API-et godtar (om lag 30 MB). "
-          "Del opp innsendingen i mindre biter."),
+    413: (
+        "For stor forespørsel (413): innholdet er over grensen API-et godtar (om lag 30 MB). "
+        "Del opp innsendingen i mindre biter."
+    ),
     422: "Ugyldige egendefinerte egenskaper (422): se feltfeilene under.",
     429: "For mange forespørsler (429): vent litt og prøv igjen.",
 }
@@ -105,8 +117,11 @@ def json_fra(svar: requests.Response) -> Any:
     try:
         return svar.json()
     except ValueError as feil:
-        raise MuninFeil(f"Munin svarte {svar.status_code}, men ikke med JSON. Sjekk adressen i .env "
-                        f"(fikk «{svar.headers.get('Content-Type', 'ukjent innholdstype')}»).", svar.status_code) from feil
+        raise MuninFeil(
+            f"Munin svarte {svar.status_code}, men ikke med JSON. Sjekk adressen i .env "
+            f"(fikk «{svar.headers.get('Content-Type', 'ukjent innholdstype')}»).",
+            svar.status_code,
+        ) from feil
 
 
 def feil_fra_svar(svar: requests.Response) -> MuninFeil:
@@ -168,7 +183,8 @@ class Innstillinger:
             mangler.append("MUNIN_CERT_KEY_PATH og MUNIN_CERT_PATH (eller MUNIN_CLIENT_SECRET)")
         if mangler:
             raise MuninFeil(
-                "Mangler innstillinger: " + ", ".join(mangler)
+                "Mangler innstillinger: "
+                + ", ".join(mangler)
                 + ". Kopier .env.example til .env og fyll inn verdiene du fikk fra FHI."
             )
         return cls(
@@ -273,15 +289,28 @@ def klientpastand(innstillinger: Innstillinger, token_adresse: str) -> str:
         nokkel = serialization.load_pem_private_key(Path(innstillinger.cert_nokkel_sti).read_bytes(), password=None)
         sertifikat = x509.load_pem_x509_certificate(Path(innstillinger.cert_sti).read_bytes())
     except (OSError, ValueError) as feil:
-        raise MuninFeil(f"Kunne ikke lese nøkkelen eller sertifikatet ({feil}). Sjekk MUNIN_CERT_KEY_PATH og "
-                        "MUNIN_CERT_PATH i .env, eller lag dem på nytt med lag_sertifikat.py.") from feil
+        raise MuninFeil(
+            f"Kunne ikke lese nøkkelen eller sertifikatet ({feil}). Sjekk MUNIN_CERT_KEY_PATH og "
+            "MUNIN_CERT_PATH i .env, eller lag dem på nytt med lag_sertifikat.py."
+        ) from feil
 
     der = sertifikat.public_bytes(serialization.Encoding.DER)
-    hode = {"alg": "RS256", "typ": "JWT",
-            "x5t#S256": _b64url(hashlib.sha256(der).digest()), "x5t": _b64url(hashlib.sha1(der, usedforsecurity=False).digest())}
+    hode = {
+        "alg": "RS256",
+        "typ": "JWT",
+        "x5t#S256": _b64url(hashlib.sha256(der).digest()),
+        "x5t": _b64url(hashlib.sha1(der, usedforsecurity=False).digest()),
+    }
     nu = int(time.time())
-    innhold = {"aud": token_adresse, "iss": innstillinger.client_id, "sub": innstillinger.client_id,
-               "jti": str(uuid.uuid4()), "nbf": nu, "iat": nu, "exp": nu + 600}
+    innhold = {
+        "aud": token_adresse,
+        "iss": innstillinger.client_id,
+        "sub": innstillinger.client_id,
+        "jti": str(uuid.uuid4()),
+        "nbf": nu,
+        "iat": nu,
+        "exp": nu + 600,
+    }
     usignert = f"{_b64url(json.dumps(hode).encode())}.{_b64url(json.dumps(innhold).encode())}"
     signatur = nokkel.sign(usignert.encode(), padding.PKCS1v15(), hashes.SHA256())
     return f"{usignert}.{_b64url(signatur)}"
@@ -295,8 +324,15 @@ class _ApiKlient:
         self.tokens = tokens
         self.okt = okt or (tokens.okt if tokens else requests.Session())
 
-    def _kall(self, metode: str, sti: str, *, autentisert: bool = True, tidsavbrudd: int = STANDARD_TIDSAVBRUDD,
-              **argumenter: Any) -> requests.Response:
+    def _kall(
+        self,
+        metode: str,
+        sti: str,
+        *,
+        autentisert: bool = True,
+        tidsavbrudd: int = STANDARD_TIDSAVBRUDD,
+        **argumenter: Any,
+    ) -> requests.Response:
         hoder = argumenter.pop("headers", {})
         hoder.setdefault("Accept-Language", "nb")
         if autentisert:
@@ -329,8 +365,14 @@ class IngestKlient(_ApiKlient):
         """Én kilde med alle detaljer."""
         return json_fra(self._kall("GET", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}"))
 
-    def lagre_variabel(self, kilde_kode: str, variabel_kode: str, foretrukket_term: str,
-                       beskrivelse: str | None = None, **flere_felt: Any) -> tuple[int, dict[str, Any]]:
+    def lagre_variabel(
+        self,
+        kilde_kode: str,
+        variabel_kode: str,
+        foretrukket_term: str,
+        beskrivelse: str | None = None,
+        **flere_felt: Any,
+    ) -> tuple[int, dict[str, Any]]:
         """Oppretter variabelen, eller oppdaterer den hvis den finnes («upsert»).
 
         Returnerer statuskoden (201 = opprettet, 200 = oppdatert) og svaret.
@@ -339,8 +381,9 @@ class IngestKlient(_ApiKlient):
         kropp: dict[str, Any] = {"preferredTerm": foretrukket_term, **flere_felt}
         if beskrivelse is not None:
             kropp["beskrivelse"] = beskrivelse
-        svar = self._kall("PATCH", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}/variabler/{_sti(variabel_kode)}",
-                          json=kropp)
+        svar = self._kall(
+            "PATCH", f"/api/ingest/v1/kilder/{_sti(kilde_kode)}/variabler/{_sti(variabel_kode)}", json=kropp
+        )
         return svar.status_code, json_fra(svar)
 
 
@@ -352,18 +395,28 @@ class EksportKlient(_ApiKlient):
 
     def healthdcat_katalog(self) -> dict[str, Any]:
         """HealthDCAT-AP-katalogen (v2, JSON-LD). Åpen, uten token, men stor (flere MB)."""
-        return json_fra(self._kall("GET", "/api/export/v2/healthdcat-ap/catalog", autentisert=False,
-                                   tidsavbrudd=KATALOG_TIDSAVBRUDD, headers={"Accept": "application/ld+json"}))
+        return json_fra(
+            self._kall(
+                "GET",
+                "/api/export/v2/healthdcat-ap/catalog",
+                autentisert=False,
+                tidsavbrudd=KATALOG_TIDSAVBRUDD,
+                headers={"Accept": "application/ld+json"},
+            )
+        )
 
     def kildeliste(self, sidestorrelse: int = 100) -> list[dict[str, Any]]:
         """Alle kilder uten variabler (lett liste). Krever export.datasets.read."""
-        return [element["kilde"] for element in
-                self._sider("/api/export/v1/datasets", {"include": "kilde", "pageSize": sidestorrelse})]
+        return [
+            element["kilde"]
+            for element in self._sider("/api/export/v1/datasets", {"include": "kilde", "pageSize": sidestorrelse})
+        ]
 
     def datasett(self, kilde_kode: str) -> dict[str, Any]:
         """Én kilde med alle variabler, med variabellistene som koder. Krever export.datasets.read."""
-        return json_fra(self._kall("GET", f"/api/export/v1/datasets/{_sti(kilde_kode)}",
-                                   params={"nestedVariables": "codes"}))
+        return json_fra(
+            self._kall("GET", f"/api/export/v1/datasets/{_sti(kilde_kode)}", params={"nestedVariables": "codes"})
+        )
 
     def variabler(self, kilde_kode: str) -> Iterator[dict[str, Any]]:
         """Variablene i én kilde, side for side. Krever export.metadata.read."""
@@ -371,8 +424,7 @@ class EksportKlient(_ApiKlient):
 
     def variabel(self, kilde_kode: str, variabel_kode: str) -> list[dict[str, Any]]:
         """Radene for én variabel (én per datasamling den inngår i; tom liste når den ikke finnes)."""
-        return [rad for rad in self.variabler(kilde_kode)
-                if rad.get("code", "").casefold() == variabel_kode.casefold()]
+        return [rad for rad in self.variabler(kilde_kode) if rad.get("code", "").casefold() == variabel_kode.casefold()]
 
     def _sider(self, sti: str, parametre: dict[str, Any]) -> Iterator[dict[str, Any]]:
         # Eksport deler lange lister i sider. Hver side har et «pageToken» for neste
@@ -397,6 +449,7 @@ def katalog_oversikt(katalog: dict[str, Any]) -> dict[str, Any]:
 
     I v2 er hver kilde en «dcat:datasetSeries» og hver datasamling et «dcat:dataset».
     """
+
     def tekst(verdi: Any) -> str:
         # En tekst i JSON-LD er {"@language": "nb", "@value": "..."}, eller en liste av slike.
         if isinstance(verdi, list):
@@ -404,10 +457,15 @@ def katalog_oversikt(katalog: dict[str, Any]) -> dict[str, Any]:
             verdi = (norsk or verdi or [""])[0]
         return verdi.get("@value", "") if isinstance(verdi, dict) else str(verdi or "")
 
-    serier = [{"kode": tekst(s.get("dct:identifier")), "tittel": tekst(s.get("dct:title"))}
-              for s in katalog.get("dcat:datasetSeries", [])]
-    return {"tittel": tekst(katalog.get("dct:title")), "serier": serier,
-            "antall_datasett": len(katalog.get("dcat:dataset", []))}
+    serier = [
+        {"kode": tekst(s.get("dct:identifier")), "tittel": tekst(s.get("dct:title"))}
+        for s in katalog.get("dcat:datasetSeries", [])
+    ]
+    return {
+        "tittel": tekst(katalog.get("dct:title")),
+        "serier": serier,
+        "antall_datasett": len(katalog.get("dcat:dataset", [])),
+    }
 
 
 def _sti(kode: str) -> str:
@@ -419,6 +477,4 @@ def lag_klienter(innstillinger: Innstillinger | None = None) -> tuple[IngestKlie
     """Lager begge klientene med ett felles token (samme app-registrering gir tilgang til begge)."""
     innstillinger = innstillinger or Innstillinger.fra_miljo()
     tokens = TokenKilde(innstillinger)
-    return (IngestKlient(innstillinger.ingest_url, tokens),
-            EksportKlient(innstillinger.eksport_url, tokens),
-            tokens)
+    return (IngestKlient(innstillinger.ingest_url, tokens), EksportKlient(innstillinger.eksport_url, tokens), tokens)

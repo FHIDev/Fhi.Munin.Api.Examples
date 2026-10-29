@@ -22,8 +22,10 @@ def main() -> int:
         # 1. Den åpne katalogen. Den er stor, så dette kan ta et halvt minutt.
         katalog = eksport.healthdcat_katalog()
         oversikt = katalog_oversikt(katalog)
-        print(f"1. HealthDCAT-AP-katalogen «{oversikt['tittel']}» har {len(oversikt['serier'])} kilder "
-              f"og {oversikt['antall_datasett']} datasamlinger.")
+        print(
+            f"1. HealthDCAT-AP-katalogen «{oversikt['tittel']}» har {len(oversikt['serier'])} kilder "
+            f"og {oversikt['antall_datasett']} datasamlinger."
+        )
 
         # 2. Token. Rollene i tokenet bestemmer hva du får lese.
         print(f"2. Token hentet. Roller: {', '.join(tokens.roller()) or '(ingen)'}")
@@ -39,8 +41,10 @@ def main() -> int:
         if kilde_kode:
             datasett = eksport.datasett(kilde_kode)
             variabler = datasett.get("variabler", [])
-            print(f"4. {kilde_kode} har {len(variabler)} variabel(er) og "
-                  f"{len(datasett.get('kilde', {}).get('datasamlinger', []))} datasamling(er) direkte under kilden.")
+            print(
+                f"4. {kilde_kode} har {len(variabler)} variabel(er) og "
+                f"{len(datasett.get('kilde', {}).get('datasamlinger', []))} datasamling(er) direkte under kilden."
+            )
             for variabel in variabler[:10]:
                 print(f"   - {variabel.get('code')}: {variabel.get('preferredTerm') or variabel.get('name')}")
         return 0

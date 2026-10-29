@@ -35,8 +35,9 @@ def par(tmp_path):
 @pytest.fixture
 def innstillinger(par) -> Innstillinger:
     nokkel, sertifikat = par
-    return Innstillinger("tenant", "klient-id", None, "api://app/.default",
-                         cert_nokkel_sti=str(nokkel), cert_sti=str(sertifikat))
+    return Innstillinger(
+        "tenant", "klient-id", None, "api://app/.default", cert_nokkel_sti=str(nokkel), cert_sti=str(sertifikat)
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Unix-rettigheter")
@@ -72,8 +73,9 @@ def test_pastanden_er_signert_og_peker_pa_sertifikatet(innstillinger, par):
     assert innhold["exp"] - innhold["nbf"] == 600
 
     # Kaster InvalidSignature hvis signaturen ikke stemmer med sertifikatets offentlige nøkkel.
-    sertifikat.public_key().verify(b64(signatur_b64), f"{hode_b64}.{innhold_b64}".encode(),
-                                   padding.PKCS1v15(), hashes.SHA256())
+    sertifikat.public_key().verify(
+        b64(signatur_b64), f"{hode_b64}.{innhold_b64}".encode(), padding.PKCS1v15(), hashes.SHA256()
+    )
 
 
 def test_tokenforesporselen_sender_pastanden_og_ingen_hemmelighet(innstillinger):
@@ -99,8 +101,13 @@ def test_en_nokkelsti_som_ikke_finnes_forklares(innstillinger):
 
 def test_sertifikat_er_nok_uten_hemmelighet_i_miljoet(monkeypatch, par):
     nokkel, sertifikat = par
-    for navn, verdi in {"MUNIN_TENANT_ID": "t", "MUNIN_CLIENT_ID": "c", "MUNIN_SCOPE": "s",
-                        "MUNIN_CERT_KEY_PATH": str(nokkel), "MUNIN_CERT_PATH": str(sertifikat)}.items():
+    for navn, verdi in {
+        "MUNIN_TENANT_ID": "t",
+        "MUNIN_CLIENT_ID": "c",
+        "MUNIN_SCOPE": "s",
+        "MUNIN_CERT_KEY_PATH": str(nokkel),
+        "MUNIN_CERT_PATH": str(sertifikat),
+    }.items():
         monkeypatch.setenv(navn, verdi)
     monkeypatch.delenv("MUNIN_CLIENT_SECRET", raising=False)
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None, raising=False)
@@ -117,6 +124,7 @@ def test_x5t_er_sha1_av_sertifikatet(innstillinger, par):
 
 def test_pastanden_gjelder_fra_na(innstillinger):
     import time
+
     innhold = json.loads(b64(klientpastand(innstillinger, TOKEN_ADRESSE).split(".")[1]))
     assert abs(innhold["iat"] - time.time()) < 5
 
