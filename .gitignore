@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# Den private nøkkelen ligger i ~/.munin, men skulle den havne her, skal den ikke i git.
+*.key
+*.cer

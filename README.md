@@ -21,8 +21,8 @@ English summary: [at the end](#english).
 ## Innhold
 
 1. [Hva du trenger](#1-hva-du-trenger)
-2. [Sett opp tilgangen](#2-sett-opp-tilgangen)
-3. [Installer](#3-installer)
+2. [Installer](#2-installer)
+3. [Sett opp tilgangen](#3-sett-opp-tilgangen)
 4. [Kjør nettsiden](#4-kjør-nettsiden)
 5. [Kjør i terminalen](#5-kjør-i-terminalen)
 6. [Hva skjer i hvert steg](#6-hva-skjer-i-hvert-steg)
@@ -35,35 +35,10 @@ English summary: [at the end](#english).
 ## 1. Hva du trenger
 
 - **Python 3.11 eller nyere.** Sjekk med `python --version` (på Windows også `py --version`).
-- **Tilgang fra FHI:** en app-registrering i FHIs Entra ID med de rollene du skal bruke (se neste avsnitt).
+- **Tilgang fra FHI:** en app-registrering i FHIs Entra ID med de rollene du skal bruke (se avsnitt 3).
 - Denne mappen, lastet ned eller klonet.
 
-## 2. Sett opp tilgangen
-
-Munins API-er er for maskiner, ikke for innloggede personer. Du logger derfor ikke inn med brukeren din. I stedet bruker skriptet en **app-registrering**: en «maskinbruker» med en klient-id og en hemmelighet. Med dem henter skriptet et token, og tokenet bærer rollene som bestemmer hva du får gjøre:
-
-| Rolle | Gir tilgang til |
-|-------|-----------------|
-| `ingest.provider.<dataleverandør>` | Skrive til kildene som har denne dataleverandøren |
-| `export.metadata.read` | Lese variabler gjennom Eksport (brukes til «les tilbake») |
-| `export.datasets.read` | Lese kildelisten og hele datasett gjennom Eksport |
-
-FHI setter opp app-registreringen og rollene. Du får tre verdier fra FHI: **tenant-id**, **klient-id** og **scope**. **Klienthemmeligheten lager du selv:** du blir eier av app-registreringen og lager hemmeligheten i Azure-portalen. Da er det bare du som har den. Ikke send den på e-post, Teams eller chat.
-
-Lag hemmeligheten slik:
-
-1. Gå til [portal.azure.com](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations** → **All applications**, og åpne app-registreringen FHI har gitt deg.
-2. Velg **Certificates & secrets** → **New client secret**. Gi den et navn og en utløpsdato.
-3. Kopier **Value** med en gang. Den vises bare denne ene gangen.
-
-Lag så innstillingsfilen:
-
-1. Kopier `.env.example` til en ny fil som heter `.env`, i samme mappe.
-2. Åpne `.env` og fyll inn de fire verdiene. Adressene til API-ene kan stå som de er.
-
-`.env` står i `.gitignore`, så den havner ikke i git. Ingen hemmeligheter står i koden.
-
-## 3. Installer
+## 2. Installer
 
 Åpne en terminal i denne mappen og lag et eget Python-miljø for prosjektet, så pakkene ikke blandes med andre prosjekter.
 
@@ -86,6 +61,36 @@ pip install -r requirements.txt
 ```
 
 Neste gang trenger du bare aktiveringslinjen (den andre linjen) før du kjører noe. Kommandoene under virker bare med miljøet aktivert og med terminalen i denne mappen.
+
+## 3. Sett opp tilgangen
+
+Munins API-er er for maskiner, ikke for innloggede personer. Du logger derfor ikke inn med brukeren din. I stedet bruker skriptet en **app-registrering**: en «maskinbruker» som FHI lager og eier. Skriptet beviser at det er app-registreringen din, henter et token, og tokenet bærer rollene som bestemmer hva du får gjøre:
+
+| Rolle | Gir tilgang til |
+|-------|-----------------|
+| `ingest.provider.<dataleverandør>` | Skrive til kildene som har denne dataleverandøren |
+| `export.metadata.read` | Lese variabler gjennom Eksport (brukes til «les tilbake») |
+| `export.datasets.read` | Lese kildelisten og hele datasett gjennom Eksport |
+
+### Med sertifikat (anbefalt)
+
+Med et sertifikat finnes det ingen hemmelighet som må sendes noe sted. Du lager et nøkkelpar på din egen maskin. Den private nøkkelen blir der; FHI får bare sertifikatet, som er den offentlige delen.
+
+1. Kjør `python lag_sertifikat.py`.
+   - Den private nøkkelen havner i mappen `.munin` i hjemmemappen din, og bare du kan lese den. Ikke send den til noen.
+   - Sertifikatet havner i denne mappen, som `munin-klient.cer`.
+   - Skriptet skriver ut to linjer for `.env`. La vinduet stå åpent.
+2. Send `munin-klient.cer` til FHI (Teams eller e-post går fint; det er ikke hemmelig). FHI laster det opp på app-registreringen din.
+3. Du får tre verdier tilbake fra FHI: **tenant-id**, **klient-id** og **scope**. Heller ikke de er hemmelige.
+4. Kopier `.env.example` til en ny fil som heter `.env`, i samme mappe. Fyll inn de tre verdiene, og lim inn de to linjene fra trinn 1 (`MUNIN_CERT_KEY_PATH` og `MUNIN_CERT_PATH`). La `MUNIN_CLIENT_SECRET` stå tom.
+
+Sertifikatet gjelder i et år. Lag et nytt med `python lag_sertifikat.py --ny` og send det til FHI på samme måte.
+
+### Med klienthemmelighet (alternativ)
+
+En app-registrering kan også bruke en klienthemmelighet i stedet for et sertifikat. Da må hemmeligheten overføres trygt fra den som lager den, og aldri på e-post, Teams eller chat. Fyll den inn som `MUNIN_CLIENT_SECRET` i `.env`, og la de to sertifikatlinjene stå tomme. Er begge satt, brukes hemmeligheten.
+
+`.env` står i `.gitignore`, så den havner ikke i git. Ingen hemmeligheter står i koden.
 
 ## 4. Kjør nettsiden
 
@@ -120,7 +125,7 @@ For eksempel `python ingest_eksempel.py test EKSEMPEL_VARIABEL`. Skriptene skriv
 **Ingest**
 
 1. **Helsesjekk:** `GET /api/ingest/v1/health`. Krever ikke token. Svarer om API-et er oppe og om det når identitetsleverandørene (Entra ID og Maskinporten).
-2. **Token:** skriptet sender klient-id og hemmelighet til Entra ID og får et tilgangstoken tilbake (`client credentials`). Tokenet varer i om lag en time, og modulen henter et nytt selv.
+2. **Token:** skriptet beviser overfor Entra ID at det er app-registreringen din, med en kort påstand signert med den private nøkkelen (eller med hemmeligheten), og får et tilgangstoken tilbake (`client credentials`). Tokenet varer i om lag en time, og modulen henter et nytt selv.
 3. **Mine kilder:** `GET /api/ingest/v1/kilder`. Kildene med samme dataleverandør som rollen din.
 4. **Lagre variabel:** `PATCH /api/ingest/v1/kilder/{kilde}/variabler/{variabel}`. Finnes variabelen, oppdateres den (svar 200); ellers opprettes den (201). Bare feltene du sender, endres. Hver lagring lager en ny versjon av variabelen.
 5. **Les tilbake:** `GET /api/export/v1/metadata/variables?kildeCode={kilde}` i Eksport-API-et, der andre systemer leser katalogen. Eksport kan ligge litt etter en lagring; vises ikke variabelen, prøv igjen om et minutt.
@@ -139,7 +144,7 @@ Modulen gjør hvert feilsvar om til en norsk forklaring, og tar med Munins egen 
 
 | Kode | Betyr | Gjør dette |
 |------|-------|------------|
-| Entra-feil (AADSTS…) | Fikk ikke token | Sjekk tenant-id, klient-id, hemmelighet og scope i `.env`. AADSTS7000215 betyr feil hemmelighet; AADSTS700016 betyr ukjent klient-id. |
+| Entra-feil (AADSTS…) | Fikk ikke token | Sjekk tenant-id, klient-id, scope og sertifikatlinjene (eller hemmeligheten) i `.env`. AADSTS700027 betyr at FHI ikke har lastet opp sertifikatet ennå; AADSTS7000215 betyr feil hemmelighet; AADSTS700016 betyr ukjent klient-id. |
 | 400 | Ugyldig forespørsel | Les feltfeilene. Et påkrevd felt mangler, eller en verdi er for lang. |
 | 401 | Ikke autentisert | Tokenet mangler, er utløpt eller er utstedt for feil API. Sjekk `MUNIN_SCOPE`. |
 | 403 | Ingen tilgang | Tokenet mangler rollen. Se «Vis rollene i tokenet», og sjekk at kilden har samme dataleverandør som rollen. |
@@ -181,10 +186,10 @@ python -m pytest
 
 Small working Python examples for Munin, the Norwegian Institute of Public Health's metadata catalogue for health data: the **Ingest API** (write metadata) and the **Export API** (read metadata), against the test environment.
 
-- `munin_api.py` is a small client: an Entra ID client-credentials token, both APIs, and every error turned into one exception type with a Norwegian explanation and the correlation id.
+- `munin_api.py` is a small client: an Entra ID client-credentials token (certificate or secret), both APIs, and every error turned into one exception type with a Norwegian explanation and the correlation id.
 - `app.py` is a Streamlit page (`streamlit run app.py`).
 - `ingest_eksempel.py` and `eksport_eksempel.py` are terminal walkthroughs.
 
-Setup: copy `.env.example` to `.env` and fill in the tenant id, client id, client secret and scope you get from FHI, then `pip install -r requirements.txt`. No ids or secrets are in the code. Access is granted per data provider (`ingest.provider.<provider>`) and for export (`export.metadata.read`, `export.datasets.read`). Run the tests with `pip install -r requirements-dev.txt` and `python -m pytest`.
+Setup: `pip install -r requirements.txt`, then `python lag_sertifikat.py`, which creates a key pair: the private key stays on your machine, and you send the public certificate (`munin-klient.cer`) to FHI, who uploads it to your app registration (a client secret works too). Copy `.env.example` to `.env` and fill in the tenant id, client id and scope you get from FHI, plus the two certificate lines the script prints. No ids or secrets are in the code. Access is granted per data provider (`ingest.provider.<provider>`) and for export (`export.metadata.read`, `export.datasets.read`). Run the tests with `pip install -r requirements-dev.txt` and `python -m pytest`.
 
 Licence: MIT, see [LICENSE](LICENSE).

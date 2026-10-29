@@ -3,7 +3,7 @@
 Modulen gjør tre ting:
 
 1. henter et tilgangstoken fra Microsoft Entra ID med «client credentials»
-   (klient-id og klienthemmelighet, ingen innlogget person);
+   (klient-id og et sertifikat eller en klienthemmelighet, ingen innlogget person);
 2. kaller Ingest-API-et (skrive metadata) og Eksport-API-et (lese metadata);
 3. gjør feilsvar om til én feiltype, MuninFeil, med en norsk forklaring.
 
@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import base64
 import json
+import hashlib
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 from urllib.parse import quote
@@ -73,7 +75,7 @@ class MuninFeil(Exception):
 FORKLARINGER = {
     400: "Ugyldig forespørsel (400): noe i det du sendte, var ikke gyldig. Se feltfeilene under.",
     401: ("Ikke autentisert (401): tokenet mangler, er utløpt eller er utstedt for feil API. "
-          "Sjekk MUNIN_TENANT_ID, MUNIN_CLIENT_ID, MUNIN_CLIENT_SECRET og MUNIN_SCOPE i .env."),
+          "Sjekk MUNIN_TENANT_ID, MUNIN_CLIENT_ID og MUNIN_SCOPE i .env."),
     403: ("Ingen tilgang (403): tokenet er gyldig, men klienten mangler rollen som trengs. "
           "Ingest krever ingest.provider.<dataleverandør> for kilden; eksport krever "
           "export.metadata.read eller export.datasets.read. Se «Roller i tokenet» og be FHI om tilgang."),
@@ -138,10 +140,14 @@ class Innstillinger:
 
     tenant_id: str
     client_id: str
-    client_secret: str
+    client_secret: str | None
     scope: str
     ingest_url: str = "https://ingest.munin.skytest.fhi.no"
     eksport_url: str = "https://export.munin.skytest.fhi.no"
+    # Innlogging med sertifikat i stedet for hemmelighet: den private nøkkelen og sertifikatet
+    # fra lag_sertifikat.py. Brukes når client_secret er tom.
+    cert_nokkel_sti: str | None = None
+    cert_sti: str | None = None
 
     @classmethod
     def fra_miljo(cls) -> "Innstillinger":
@@ -153,18 +159,24 @@ class Innstillinger:
         except ImportError:
             pass
 
-        mangler = [navn for navn in ("MUNIN_TENANT_ID", "MUNIN_CLIENT_ID", "MUNIN_CLIENT_SECRET", "MUNIN_SCOPE")
-                   if not os.environ.get(navn, "").strip()]
+        def verdi(navn: str) -> str | None:
+            return os.environ.get(navn, "").strip() or None
+
+        mangler = [navn for navn in ("MUNIN_TENANT_ID", "MUNIN_CLIENT_ID", "MUNIN_SCOPE") if not verdi(navn)]
+        if not verdi("MUNIN_CLIENT_SECRET") and not (verdi("MUNIN_CERT_KEY_PATH") and verdi("MUNIN_CERT_PATH")):
+            mangler.append("MUNIN_CERT_KEY_PATH og MUNIN_CERT_PATH (eller MUNIN_CLIENT_SECRET)")
         if mangler:
             raise MuninFeil(
                 "Mangler innstillinger: " + ", ".join(mangler)
                 + ". Kopier .env.example til .env og fyll inn verdiene du fikk fra FHI."
             )
         return cls(
-            tenant_id=os.environ["MUNIN_TENANT_ID"].strip(),
-            client_id=os.environ["MUNIN_CLIENT_ID"].strip(),
-            client_secret=os.environ["MUNIN_CLIENT_SECRET"].strip(),
-            scope=os.environ["MUNIN_SCOPE"].strip(),
+            tenant_id=verdi("MUNIN_TENANT_ID"),
+            client_id=verdi("MUNIN_CLIENT_ID"),
+            client_secret=verdi("MUNIN_CLIENT_SECRET"),
+            scope=verdi("MUNIN_SCOPE"),
+            cert_nokkel_sti=verdi("MUNIN_CERT_KEY_PATH"),
+            cert_sti=verdi("MUNIN_CERT_PATH"),
             ingest_url=os.environ.get("MUNIN_INGEST_URL", cls.ingest_url).strip().rstrip("/"),
             eksport_url=os.environ.get("MUNIN_EXPORT_URL", cls.eksport_url).strip().rstrip("/"),
         )
@@ -188,17 +200,20 @@ class TokenKilde:
             return self._token
 
         adresse = f"https://login.microsoftonline.com/{self.innstillinger.tenant_id}/oauth2/v2.0/token"
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.innstillinger.client_id,
+            "scope": self.innstillinger.scope,
+        }
+        if self.innstillinger.client_secret:
+            data["client_secret"] = self.innstillinger.client_secret
+        else:
+            # Med sertifikat sender vi ingen hemmelighet, bare en kort påstand signert med den
+            # private nøkkelen. Entra sjekker signaturen mot sertifikatet FHI har lastet opp.
+            data["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            data["client_assertion"] = klientpastand(self.innstillinger, adresse)
         try:
-            svar = self.okt.post(
-                adresse,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.innstillinger.client_id,
-                    "client_secret": self.innstillinger.client_secret,
-                    "scope": self.innstillinger.scope,
-                },
-                timeout=STANDARD_TIDSAVBRUDD,
-            )
+            svar = self.okt.post(adresse, data=data, timeout=STANDARD_TIDSAVBRUDD)
         except requests.RequestException as feil:
             raise MuninFeil(f"Fikk ikke kontakt med Entra ID for å hente token: {feil}") from feil
 
@@ -211,8 +226,9 @@ class TokenKilde:
             except ValueError:
                 beskrivelse = svar.text[:300]
             raise MuninFeil(
-                f"Entra ID ga ikke noe token ({svar.status_code}). Sjekk tenant-id, klient-id, "
-                f"klienthemmelighet og scope i .env.\nEntra svarte: {beskrivelse}",
+                f"Entra ID ga ikke noe token ({svar.status_code}). Sjekk tenant-id, klient-id, scope og "
+                f"sertifikatet (eller klienthemmeligheten) i .env. AADSTS700027 betyr at FHI ikke har lastet "
+                f"opp dette sertifikatet ennå.\nEntra svarte: {beskrivelse}",
                 svar.status_code,
             )
 
@@ -236,6 +252,38 @@ class TokenKilde:
         except (IndexError, ValueError) as feil:
             raise MuninFeil("Tokenet fra Entra ID kunne ikke leses.") from feil
         return sorted(data.get("roles", []))
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def klientpastand(innstillinger: Innstillinger, token_adresse: str) -> str:
+    """En «client assertion»: en JWT signert med den private nøkkelen, gyldig i ti minutter.
+
+    Hodet bærer sertifikatets fingeravtrykk (x5t#S256 og x5t), så Entra vet hvilket opplastet
+    sertifikat signaturen skal sjekkes mot.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    try:
+        nokkel = serialization.load_pem_private_key(open(innstillinger.cert_nokkel_sti, "rb").read(), password=None)
+        sertifikat = x509.load_pem_x509_certificate(open(innstillinger.cert_sti, "rb").read())
+    except (OSError, ValueError) as feil:
+        raise MuninFeil(f"Kunne ikke lese nøkkelen eller sertifikatet ({feil}). Sjekk MUNIN_CERT_KEY_PATH og "
+                        "MUNIN_CERT_PATH i .env, eller lag dem på nytt med lag_sertifikat.py.") from feil
+
+    der = sertifikat.public_bytes(serialization.Encoding.DER)
+    hode = {"alg": "RS256", "typ": "JWT",
+            "x5t#S256": _b64url(hashlib.sha256(der).digest()), "x5t": _b64url(hashlib.sha1(der).digest())}
+    nu = int(time.time())
+    innhold = {"aud": token_adresse, "iss": innstillinger.client_id, "sub": innstillinger.client_id,
+               "jti": str(uuid.uuid4()), "nbf": nu, "iat": nu, "exp": nu + 600}
+    usignert = f"{_b64url(json.dumps(hode).encode())}.{_b64url(json.dumps(innhold).encode())}"
+    signatur = nokkel.sign(usignert.encode(), padding.PKCS1v15(), hashes.SHA256())
+    return f"{usignert}.{_b64url(signatur)}"
 
 
 class _ApiKlient:
